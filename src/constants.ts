@@ -1,5 +1,32 @@
 import { AWPFeature } from './types';
 
+/** 功能依賴關係對照表：key 為子功能 ID，value 為父功能 ID */
+export const DEPENDENCY_MAP: Record<string, string> = {
+  TotalInMeterRate: 'SeparateMeterRate',
+  TotalOutMeterRate: 'SeparateMeterRate',
+  TotalPlayMeterRate: 'SeparateMeterRate',
+  TotalWinMeterRate: 'SeparateMeterRate',
+  CashoutLimitAmount: 'CashoutLimit',
+  PlayScore: 'ScoreBox',
+  HandCountAmount: 'HandCount',
+};
+
+/** YAML 匯出用的分類排序 */
+export const CATEGORY_ORDER = [
+  'SystemSetup.Configuration',
+  'SystemSetup.JackpotSetting',
+  'SystemSetup.TimeAdjust',
+  'SystemSetup.VolumeSetting',
+  'SystemSetup.PasswordSetting',
+  'SystemSetup.PerGameName',
+  'SystemSetup.PerGameBetList',
+  'SystemSetup.PerGameDenomList',
+  'Peripheral.BillAcceptorSetting',
+  'Peripheral.PrinterSetting',
+  'Peripheral.PrinterSetting.VoucherTemplate',
+  'Peripheral.MeterSetting'
+];
+
 export const DEFAULT_FEATURES: AWPFeature[] = [
   // [SystemSetup] Configuration - Left
   {
@@ -170,7 +197,8 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Switch',
     description: '啟用或禁用遊戲得分顯示。',
     legalTip: '無特定法律限制。',
-    category: 'SystemSetup.Configuration'
+    category: 'SystemSetup.Configuration',
+    dependsOn: 'ScoreBox'
   },
   {
     id: 'HandCount',
@@ -194,7 +222,8 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '設定人工計數觸發的金額門檻。',
     legalTip: '與人工派彩門檻相關聯。',
-    category: 'SystemSetup.Configuration'
+    category: 'SystemSetup.Configuration',
+    dependsOn: 'HandCount'
   },
   {
     id: 'ConfirmCashout',
@@ -242,7 +271,8 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Numberpad',
     description: '設定出金限制的具體金額。',
     legalTip: '通常設定為 $1,200 (IRS 申報門檻)。',
-    category: 'SystemSetup.Configuration'
+    category: 'SystemSetup.Configuration',
+    dependsOn: 'CashoutLimit'
   },
   {
     id: 'MeterGame',
@@ -328,7 +358,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 1 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game2_name',
@@ -340,7 +370,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 2 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game3_name',
@@ -352,7 +382,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 3 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game4_name',
@@ -364,7 +394,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 4 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game5_name',
@@ -376,7 +406,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 5 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game6_name',
@@ -388,7 +418,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 6 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game7_name',
@@ -400,7 +430,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 7 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game8_name',
@@ -412,7 +442,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 8 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game9_name',
@@ -424,7 +454,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 9 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
   {
     id: 'game10_name',
@@ -436,7 +466,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Textfield',
     description: '遊戲 10 的顯示名稱。',
     legalTip: '最長 63 個字元。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameName'
   },
 
   // PerGameBetList
@@ -450,7 +480,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 1 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game2_bets',
@@ -462,7 +492,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 2 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game3_bets',
@@ -474,7 +504,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 3 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game4_bets',
@@ -486,7 +516,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 4 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game5_bets',
@@ -498,7 +528,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 5 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game6_bets',
@@ -510,7 +540,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 6 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game7_bets',
@@ -522,7 +552,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 7 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game8_bets',
@@ -534,7 +564,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 8 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game9_bets',
@@ -546,7 +576,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 9 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
   {
     id: 'game10_bets',
@@ -558,7 +588,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 10 可用的投注選項。',
     legalTip: '必須包含在認證範圍內。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameBetList'
   },
 
   // PerGameDenomList
@@ -572,7 +602,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 1 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game2_denoms',
@@ -584,7 +614,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 2 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game3_denoms',
@@ -596,7 +626,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 3 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game4_denoms',
@@ -608,7 +638,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 4 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game5_denoms',
@@ -620,7 +650,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 5 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game6_denoms',
@@ -632,7 +662,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 6 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game7_denoms',
@@ -644,7 +674,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 7 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game8_denoms',
@@ -656,7 +686,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 8 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game9_denoms',
@@ -668,7 +698,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 9 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
   {
     id: 'game10_denoms',
@@ -680,7 +710,7 @@ export const DEFAULT_FEATURES: AWPFeature[] = [
     type: 'Combobox',
     description: '遊戲 10 可用的面額 (cents)。',
     legalTip: '需對應機台支援的面額。',
-    category: 'SystemSetup.GameConfig'
+    category: 'SystemSetup.PerGameDenomList'
   },
 
   // Jackpot Setting
