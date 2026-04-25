@@ -11,7 +11,7 @@ function createWindow() {
     height: 900,
     title: 'AWP 配置產生器',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
