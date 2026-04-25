@@ -19,7 +19,8 @@ export function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
             initial={{ opacity: 0, x: 80 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 80 }}
-            className={`max-w-sm w-full bg-bg-card rounded-lg border-l-4 px-4 py-3 flex items-center gap-3 shadow-lg ${
+            onClick={() => onRemove(toast.id)}
+            className={`max-w-sm w-full bg-bg-card rounded-lg border-l-4 px-4 py-3 flex items-center gap-3 shadow-lg cursor-pointer ${
               toast.type === 'success' ? 'border-l-accent-main' : 'border-l-red-500'
             }`}
           >
