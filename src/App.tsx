@@ -9,8 +9,8 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Plus } from 'lucide-react';
 import { CATEGORY_ORDER } from './constants';
-import { useFeatures, useSimulator, useSnapshots, useYamlExport } from './hooks';
-import { Header, SortableFeature, FeatureEditor, YamlPreviewModal, SnapshotPanel, SimulatorPreview, VoucherModal } from './components';
+import { useFeatures, useSimulator, useSnapshots, useYamlExport, useToast } from './hooks';
+import { Header, SortableFeature, FeatureEditor, YamlPreviewModal, SnapshotPanel, SimulatorPreview, VoucherModal, ToastContainer } from './components';
 import { cn } from './utils';
 
 /** AWP 配置產生器主元件 — 負責組裝 layout 與協調各模組 */
@@ -18,7 +18,8 @@ export default function App() {
   const feat = useFeatures();
   const sim = useSimulator(feat.features);
   const snap = useSnapshots();
-  const yamlExport = useYamlExport(feat.features, feat.setFeatures, feat.regionName, feat.setRegionName, snap.snapshots, snap.setSnapshots);
+  const toast = useToast();
+  const yamlExport = useYamlExport(feat.features, feat.setFeatures, feat.regionName, feat.setRegionName, snap.snapshots, snap.setSnapshots, toast.addToast);
 
   const [isExporting, setIsExporting] = useState(false);
   const [showYamlModal, setShowYamlModal] = useState(false);
@@ -161,6 +162,9 @@ export default function App() {
       <AnimatePresence>
         {sim.activeVoucher && <VoucherModal voucher={sim.activeVoucher} features={feat.features} formatBalance={sim.formatBalance} onClose={() => sim.setActiveVoucher(null)} />}
       </AnimatePresence>
+
+      {/* Toast 通知 */}
+      <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
     </div>
   );
 }
