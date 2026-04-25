@@ -4,6 +4,23 @@ import { DEFAULT_FEATURES } from '../constants';
 import { parseToCents, toEnglishValue, parseCurrency } from '../utils';
 import yaml from 'js-yaml';
 
+/** 偵測是否在 Electron 環境中 */
+const electronAPI = (window as any).electronAPI as {
+  saveFile: (content: string, defaultName: string, filters: any[]) => Promise<boolean>;
+  openFile: (filters: any[]) => Promise<string | null>;
+} | undefined;
+
+/** 瀏覽器 fallback：blob 下載 */
+const browserDownload = (content: string, filename: string, mimeType: string) => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 /** YAML/JSON 匯出匯入 hook */
 export function useYamlExport(
   features: AWPFeature[],
@@ -36,93 +53,112 @@ export function useYamlExport(
     return String(val);
   };
 
-  /** 匯入 YAML 檔案 */
-  const importYaml = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  /** 解析 YAML 內容字串為 features */
+  const parseYamlContent = useCallback((content: string) => {
+    const data = yaml.load(content) as any;
+    if (!data || typeof data !== 'object') throw new Error('無效的 YAML 格式');
+
+    const importedFeatures: AWPFeature[] = [];
+
+    const processEntryList = (section: any, category: string) => {
+      if (!section.EntryList) return;
+      const entryOrder = [...(section.EntryOrder || []), ...(section.EntryOrderLeft || []), ...(section.EntryOrderRight || [])];
+      const allIds = Object.keys(section.EntryList);
+      const orderedIds = [...new Set([...entryOrder, ...allIds])];
+      orderedIds.forEach(id => {
+        if (!section.EntryList[id]) return;
+        const item = section.EntryList[id];
+        const existing = features.find(f => f.id === id) || DEFAULT_FEATURES.find(f => f.id === id);
+        importedFeatures.push({
+          id, nameEn: existing?.nameEn || id.replace(/([A-Z])/g, ' $1').trim(),
+          nameZh: existing?.nameZh || id, enabled: true,
+          type: (item.type as any) || (existing?.type) || 'Label',
+          options: Array.isArray(item.value_list) ? item.value_list.map((v: any) => toDisplayValue(v, id)) : (item.type === 'Switch' || existing?.type === 'Switch' ? ['OFF', 'ON'] : (existing?.options || [])),
+          selectedOption: toDisplayValue(item.default !== undefined ? item.default : existing?.selectedOption, id),
+          description: existing?.description || '從 YAML 匯入的功能項目。',
+          legalTip: existing?.legalTip || '自動解析之法規參考。',
+          category, dependsOn: existing?.dependsOn,
+        });
+      });
+    };
+
+    const traverse = (obj: any, path: string[] = []) => {
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+      const currentPath = path.join('.');
+      if (obj.EntryList) processEntryList(obj, currentPath);
+      const flatSections = ['SystemSetup.PerGameName', 'SystemSetup.PerGameBetList', 'SystemSetup.PerGameDenomList'];
+      if (flatSections.includes(currentPath)) {
+        Object.entries(obj).forEach(([key, val]) => {
+          if (typeof val !== 'object' || Array.isArray(val)) {
+            const suffixMap: Record<string, string> = { 'PerGameName': 'name', 'PerGameBetList': 'bets', 'PerGameDenomList': 'denoms' };
+            const suffix = suffixMap[currentPath.split('.').pop()!];
+            const featureId = `${key}_${suffix}`;
+            const existing = features.find(f => f.id === featureId) || DEFAULT_FEATURES.find(f => f.id === featureId);
+            importedFeatures.push({
+              id: featureId, nameEn: existing?.nameEn || featureId, nameZh: existing?.nameZh || featureId,
+              enabled: true, type: existing?.type || (Array.isArray(val) ? 'Combobox' : 'Textfield'),
+              options: Array.isArray(val) ? (val as any[]).map(v => String(v)) : [String(val)],
+              selectedOption: Array.isArray(val) ? String(val[0]) : String(val),
+              description: existing?.description || '已自動解讀 YAML 結構之遊戲配置。',
+              legalTip: existing?.legalTip || '', category: currentPath,
+            });
+          }
+        });
+      }
+      Object.entries(obj).forEach(([key, val]) => {
+        if (key !== 'EntryList' && !key.startsWith('EntryOrder') && key !== 'EntryOrderLeft' && key !== 'EntryOrderRight') {
+          traverse(val, [...path, key]);
+        }
+      });
+    };
+
+    traverse(data);
+
+    if (data.SystemSetup?.CurrentEnableGame !== undefined) {
+      const existing = features.find(f => f.id === 'CurrentEnableGame') || DEFAULT_FEATURES.find(f => f.id === 'CurrentEnableGame');
+      if (existing) importedFeatures.push({ ...existing, selectedOption: String(data.SystemSetup.CurrentEnableGame), category: 'SystemSetup.Configuration' });
+    }
+
+    const finalFeatures = importedFeatures.reduce((acc: AWPFeature[], curr) => {
+      if (!acc.find(f => f.id === curr.id)) acc.push(curr);
+      return acc;
+    }, []);
+    if (finalFeatures.length === 0) throw new Error('YAML 中未找到任何有效的配置項目 (EntryList)');
+    return finalFeatures;
+  }, [features]);
+
+  /** 匯入 YAML — Electron 用 dialog，瀏覽器用 file input */
+  const importYaml = useCallback((e?: React.ChangeEvent<HTMLInputElement>) => {
+    if (electronAPI) {
+      electronAPI.openFile([{ name: 'YAML', extensions: ['yaml', 'yml'] }]).then(content => {
+        if (!content) return;
+        try {
+          const finalFeatures = parseYamlContent(content);
+          setFeatures(finalFeatures);
+          alert(`匯入成功！共導入 ${finalFeatures.length} 個配置項目。`);
+        } catch (err) {
+          alert('YAML 匯入失敗：' + (err instanceof Error ? err.message : '未知錯誤'));
+        }
+      });
+      return;
+    }
+    // 瀏覽器 fallback
+    if (!e) return;
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const content = event.target?.result as string;
-        const data = yaml.load(content) as any;
-        if (!data || typeof data !== 'object') throw new Error('無效的 YAML 格式');
-
-        const importedFeatures: AWPFeature[] = [];
-
-        const processEntryList = (section: any, category: string) => {
-          if (!section.EntryList) return;
-          const entryOrder = [...(section.EntryOrder || []), ...(section.EntryOrderLeft || []), ...(section.EntryOrderRight || [])];
-          const allIds = Object.keys(section.EntryList);
-          const orderedIds = [...new Set([...entryOrder, ...allIds])];
-          orderedIds.forEach(id => {
-            if (!section.EntryList[id]) return;
-            const item = section.EntryList[id];
-            const existing = features.find(f => f.id === id) || DEFAULT_FEATURES.find(f => f.id === id);
-            importedFeatures.push({
-              id, nameEn: existing?.nameEn || id.replace(/([A-Z])/g, ' $1').trim(),
-              nameZh: existing?.nameZh || id, enabled: true,
-              type: (item.type as any) || (existing?.type) || 'Label',
-              options: Array.isArray(item.value_list) ? item.value_list.map((v: any) => toDisplayValue(v, id)) : (item.type === 'Switch' || existing?.type === 'Switch' ? ['OFF', 'ON'] : (existing?.options || [])),
-              selectedOption: toDisplayValue(item.default !== undefined ? item.default : existing?.selectedOption, id),
-              description: existing?.description || '從 YAML 匯入的功能項目。',
-              legalTip: existing?.legalTip || '自動解析之法規參考。',
-              category, dependsOn: existing?.dependsOn,
-            });
-          });
-        };
-
-        const traverse = (obj: any, path: string[] = []) => {
-          if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
-          const currentPath = path.join('.');
-          if (obj.EntryList) processEntryList(obj, currentPath);
-          const flatSections = ['SystemSetup.PerGameName', 'SystemSetup.PerGameBetList', 'SystemSetup.PerGameDenomList'];
-          if (flatSections.includes(currentPath)) {
-            Object.entries(obj).forEach(([key, val]) => {
-              if (typeof val !== 'object' || Array.isArray(val)) {
-                const suffixMap: Record<string, string> = { 'PerGameName': 'name', 'PerGameBetList': 'bets', 'PerGameDenomList': 'denoms' };
-                const suffix = suffixMap[currentPath.split('.').pop()!];
-                const featureId = `${key}_${suffix}`;
-                const existing = features.find(f => f.id === featureId) || DEFAULT_FEATURES.find(f => f.id === featureId);
-                importedFeatures.push({
-                  id: featureId, nameEn: existing?.nameEn || featureId, nameZh: existing?.nameZh || featureId,
-                  enabled: true, type: existing?.type || (Array.isArray(val) ? 'Combobox' : 'Textfield'),
-                  options: Array.isArray(val) ? (val as any[]).map(v => String(v)) : [String(val)],
-                  selectedOption: Array.isArray(val) ? String(val[0]) : String(val),
-                  description: existing?.description || '已自動解讀 YAML 結構之遊戲配置。',
-                  legalTip: existing?.legalTip || '', category: currentPath,
-                });
-              }
-            });
-          }
-          Object.entries(obj).forEach(([key, val]) => {
-            if (key !== 'EntryList' && !key.startsWith('EntryOrder') && key !== 'EntryOrderLeft' && key !== 'EntryOrderRight') {
-              traverse(val, [...path, key]);
-            }
-          });
-        };
-
-        traverse(data);
-
-        if (data.SystemSetup?.CurrentEnableGame !== undefined) {
-          const existing = features.find(f => f.id === 'CurrentEnableGame') || DEFAULT_FEATURES.find(f => f.id === 'CurrentEnableGame');
-          if (existing) importedFeatures.push({ ...existing, selectedOption: String(data.SystemSetup.CurrentEnableGame), category: 'SystemSetup.Configuration' });
-        }
-
-        const finalFeatures = importedFeatures.reduce((acc: AWPFeature[], curr) => {
-          if (!acc.find(f => f.id === curr.id)) acc.push(curr);
-          return acc;
-        }, []);
-        if (finalFeatures.length === 0) throw new Error('YAML 中未找到任何有效的配置項目 (EntryList)');
+        const finalFeatures = parseYamlContent(event.target?.result as string);
         setFeatures(finalFeatures);
         alert(`匯入成功！共導入 ${finalFeatures.length} 個配置項目。`);
       } catch (err) {
-        console.error(err);
         alert('YAML 匯入失敗：' + (err instanceof Error ? err.message : '未知錯誤'));
       }
     };
     reader.readAsText(file);
     e.target.value = '';
-  }, [features, setFeatures]);
+  }, [parseYamlContent, setFeatures]);
 
   /** 產生 YAML 字串 */
   const generateMachineYaml = useCallback(() => {
@@ -166,7 +202,6 @@ export function useYamlExport(
           block += `${indent}  value_list: ${listStr}\n`;
         }
       }
-      // 依賴關係
       if (['TotalInMeterRate', 'TotalOutMeterRate', 'TotalPlayMeterRate', 'TotalWinMeterRate'].includes(f.id)) {
         block += `${indent}  depends_on: SeparateMeterRate\n`;
       }
@@ -182,15 +217,8 @@ export function useYamlExport(
       return block;
     };
 
-    const categories = [
-      'SystemSetup.Configuration', 'SystemSetup.JackpotSetting', 'SystemSetup.TimeAdjust',
-      'SystemSetup.VolumeSetting', 'SystemSetup.PasswordSetting',
-      'Peripheral.BillAcceptorSetting', 'Peripheral.PrinterSetting', 'Peripheral.MeterSetting'
-    ];
-
     let y = `# ==========================================\n# AllSettings_Integrated.yaml\n# 整合所有設定頁 YAML，依功能分區清楚標示\n#\n# 結構：\n#   SystemSetup:\n#     Configuration\n#     JackpotSetting\n#     TimeAdjust\n#     VolumeSetting\n#     PasswordSetting\n#   Peripheral:\n#     BillAcceptorSetting\n#     PrinterSetting\n#       VoucherTemplate (SubPage)\n#     MeterSetting\n# ==========================================\n\n`;
 
-    // SystemSetup
     y += `SystemSetup:\n`;
     const configFeatures = features.filter(f => f.category === 'SystemSetup.Configuration' && f.id !== 'CurrentEnableGame');
     y += `  Configuration:\n    # 本次新增設定，暫時不使用，放在左邊列表最下方\n    EntryOrderLeft:\n`;
@@ -200,35 +228,30 @@ export function useYamlExport(
     y += `    EntryList:\n`;
     configFeatures.forEach(f => { y += getFeatureYamlBlock(f); });
 
-    // JackpotSetting
     const jpFeatures = features.filter(f => f.category === 'SystemSetup.JackpotSetting');
     y += `\n  # ==========================================\n  # [SystemSetup] JackpotSetting\n  # ==========================================\n  JackpotSetting:\n    EntryOrder:\n`;
     jpFeatures.forEach(f => { y += `      - ${f.id}\n`; });
     y += `    EntryList:\n`;
     jpFeatures.forEach(f => { y += getFeatureYamlBlock(f); });
 
-    // TimeAdjust
     const timeFeatures = features.filter(f => f.category === 'SystemSetup.TimeAdjust');
     y += `\n  # ==========================================\n  # [SystemSetup] TimeAdjust\n  # ==========================================\n  TimeAdjust:\n    EntryList:\n`;
     timeFeatures.forEach(f => { y += getFeatureYamlBlock(f); });
 
-    // VolumeSetting
     const volFeatures = features.filter(f => f.category === 'SystemSetup.VolumeSetting');
     y += `\n  # ==========================================\n  # [SystemSetup] VolumeSetting\n  # ==========================================\n  VolumeSetting:\n    EntryList:\n`;
     volFeatures.forEach(f => { y += getFeatureYamlBlock(f); });
 
-    // PasswordSetting
     const passFeatures = features.filter(f => f.category === 'SystemSetup.PasswordSetting');
     y += `\n  # ==========================================\n  # [SystemSetup] PasswordSetting\n  # ==========================================\n  PasswordSetting:\n    EntryList:\n`;
     passFeatures.forEach(f => { y += getFeatureYamlBlock(f); });
 
-    // Special items
-    y += `\n  # ==========================================\n  # [SystemSetup] CurrentEnableGame\n  # ==========================================\n  CurrentEnableGame: ${currentEnableGame}\n`;
+    const currentEnableGame2 = currentEnableGame;
+    y += `\n  # ==========================================\n  # [SystemSetup] CurrentEnableGame\n  # ==========================================\n  CurrentEnableGame: ${currentEnableGame2}\n`;
     y += `\n  # ==========================================\n  # [SystemSetup] PerGameName\n  # ==========================================\n  PerGameName:\n${generatePerGameSection('PerGameName', 'name', false)}`;
     y += `\n  # ==========================================\n  # [SystemSetup] PerGameBetList\n  # ==========================================\n  PerGameBetList:\n${generatePerGameSection('PerGameBetList', 'bets', true)}`;
     y += `\n  # ==========================================\n  # [SystemSetup] PerGameDenomList\n  # ==========================================\n  PerGameDenomList:\n${generatePerGameSection('PerGameDenomList', 'denoms', true)}`;
 
-    // Peripheral
     y += `\n# ==========================================\n# Peripheral\n# ==========================================\nPeripheral:\n`;
     const billFeatures = features.filter(f => f.category === 'Peripheral.BillAcceptorSetting');
     y += `  BillAcceptorSetting:\n    EntryList:\n`;
@@ -250,38 +273,34 @@ export function useYamlExport(
     return y;
   }, [features]);
 
-  /** 匯出 YAML 檔案 */
-  const exportYaml = useCallback(() => {
+  /** 匯出 YAML 檔案 — Electron 用 dialog，瀏覽器用 blob */
+  const exportYaml = useCallback(async () => {
     const yamlStr = generateMachineYaml();
-    const blob = new Blob([yamlStr], { type: 'text/yaml' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `awp_config_${regionName.toLowerCase().replace(/\s+/g, '_')}.yaml`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const filename = `awp_config_${regionName.toLowerCase().replace(/\s+/g, '_')}.yaml`;
+    if (electronAPI) {
+      await electronAPI.saveFile(yamlStr, filename, [{ name: 'YAML', extensions: ['yaml', 'yml'] }]);
+    } else {
+      browserDownload(yamlStr, filename, 'text/yaml');
+    }
   }, [generateMachineYaml, regionName]);
 
-  /** 匯出 JSON */
-  const exportJson = useCallback(() => {
+  /** 匯出 JSON — Electron 用 dialog，瀏覽器用 blob */
+  const exportJson = useCallback(async () => {
     const data = { version: "4.2.0", metadata: { exportedAt: new Date().toISOString(), appName: "AWP 配置產生器", environment: "生產環境" }, regionName, features, snapshots };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `awp_config_full_${regionName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const content = JSON.stringify(data, null, 2);
+    const filename = `awp_config_full_${regionName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.json`;
+    if (electronAPI) {
+      await electronAPI.saveFile(content, filename, [{ name: 'JSON', extensions: ['json'] }]);
+    } else {
+      browserDownload(content, filename, 'application/json');
+    }
   }, [regionName, features, snapshots]);
 
-  /** 匯入 JSON */
-  const importJson = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
+  /** 匯入 JSON — Electron 用 dialog，瀏覽器用 file input */
+  const importJson = useCallback((e?: React.ChangeEvent<HTMLInputElement>) => {
+    const processJsonContent = (content: string) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
+        const data = JSON.parse(content);
         const featuresToLoad = data.features || (data.config && data.config.features);
         const regionToLoad = data.regionName || (data.config && data.config.regionName);
         if (featuresToLoad && Array.isArray(featuresToLoad)) {
@@ -297,6 +316,19 @@ export function useYamlExport(
         }
       } catch { alert('解析 JSON 檔案失敗，請確保這是正確的 AWP 備份檔案。'); }
     };
+
+    if (electronAPI) {
+      electronAPI.openFile([{ name: 'JSON', extensions: ['json'] }]).then(content => {
+        if (content) processJsonContent(content);
+      });
+      return;
+    }
+    // 瀏覽器 fallback
+    if (!e) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => processJsonContent(event.target?.result as string);
     reader.readAsText(file);
     e.target.value = '';
   }, [setFeatures, setRegionName, setSnapshots]);
