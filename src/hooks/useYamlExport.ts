@@ -6,9 +6,13 @@ import yaml from 'js-yaml';
 
 /** 偵測是否在 Electron 環境中 */
 const electronAPI = (window as any).electronAPI as {
-  saveFile: (content: string, defaultName: string, filters: any[]) => Promise<boolean>;
-  openFile: (filters: any[]) => Promise<string | null>;
+  saveFile: (content: string, defaultName: string, filters: any[]) => Promise<boolean | { success: false; error: string }>;
+  openFile: (filters: any[]) => Promise<string | null | { success: false; error: string }>;
 } | undefined;
+
+/** 檢查 IPC 回傳是否為錯誤 */
+const isIpcError = (result: any): result is { success: false; error: string } =>
+  result && typeof result === 'object' && result.success === false;
 
 /** 瀏覽器 fallback：blob 下載 */
 const browserDownload = (content: string, filename: string, mimeType: string) => {
@@ -29,6 +33,7 @@ export function useYamlExport(
   setRegionName: (n: string) => void,
   snapshots: Snapshot[],
   setSnapshots: (s: Snapshot[]) => void,
+  showToast?: (type: 'success' | 'error', message: string) => void,
 ) {
   /** YAML 匯入時將值轉回 UI 顯示格式 */
   const toDisplayValue = (val: any, id: string): string => {
@@ -131,13 +136,14 @@ export function useYamlExport(
   const importYaml = useCallback((e?: React.ChangeEvent<HTMLInputElement>) => {
     if (electronAPI) {
       electronAPI.openFile([{ name: 'YAML', extensions: ['yaml', 'yml'] }]).then(content => {
+        if (isIpcError(content)) { showToast?.('error', content.error); return; }
         if (!content) return;
         try {
           const finalFeatures = parseYamlContent(content);
           setFeatures(finalFeatures);
-          alert(`匯入成功！共導入 ${finalFeatures.length} 個配置項目。`);
+          showToast?.('success', `匯入成功！共導入 ${finalFeatures.length} 個配置項目。`);
         } catch (err) {
-          alert('YAML 匯入失敗：' + (err instanceof Error ? err.message : '未知錯誤'));
+          showToast?.('error', 'YAML 匯入失敗：' + (err instanceof Error ? err.message : '未知錯誤'));
         }
       });
       return;
@@ -158,7 +164,7 @@ export function useYamlExport(
     };
     reader.readAsText(file);
     e.target.value = '';
-  }, [parseYamlContent, setFeatures]);
+  }, [parseYamlContent, setFeatures, showToast]);
 
   /** 產生 YAML 字串 */
   const generateMachineYaml = useCallback(() => {
@@ -278,11 +284,13 @@ export function useYamlExport(
     const yamlStr = generateMachineYaml();
     const filename = `awp_config_${regionName.toLowerCase().replace(/\s+/g, '_')}.yaml`;
     if (electronAPI) {
-      await electronAPI.saveFile(yamlStr, filename, [{ name: 'YAML', extensions: ['yaml', 'yml'] }]);
+      const result = await electronAPI.saveFile(yamlStr, filename, [{ name: 'YAML', extensions: ['yaml', 'yml'] }]);
+      if (isIpcError(result)) { showToast?.('error', result.error); return; }
+      if (result) showToast?.('success', '檔案儲存成功！');
     } else {
       browserDownload(yamlStr, filename, 'text/yaml');
     }
-  }, [generateMachineYaml, regionName]);
+  }, [generateMachineYaml, regionName, showToast]);
 
   /** 匯出 JSON — Electron 用 dialog，瀏覽器用 blob */
   const exportJson = useCallback(async () => {
@@ -290,11 +298,13 @@ export function useYamlExport(
     const content = JSON.stringify(data, null, 2);
     const filename = `awp_config_full_${regionName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}.json`;
     if (electronAPI) {
-      await electronAPI.saveFile(content, filename, [{ name: 'JSON', extensions: ['json'] }]);
+      const result = await electronAPI.saveFile(content, filename, [{ name: 'JSON', extensions: ['json'] }]);
+      if (isIpcError(result)) { showToast?.('error', result.error); return; }
+      if (result) showToast?.('success', '檔案儲存成功！');
     } else {
       browserDownload(content, filename, 'application/json');
     }
-  }, [regionName, features, snapshots]);
+  }, [regionName, features, snapshots, showToast]);
 
   /** 匯入 JSON — Electron 用 dialog，瀏覽器用 file input */
   const importJson = useCallback((e?: React.ChangeEvent<HTMLInputElement>) => {
@@ -310,16 +320,17 @@ export function useYamlExport(
             setSnapshots(data.snapshots);
             localStorage.setItem('awp_snapshots', JSON.stringify(data.snapshots));
           }
-          alert('成功載入配置項目！已恢復所有功能設定與清單順序。');
+          showToast?.('success', '成功載入配置項目！已恢復所有功能設定與清單順序。');
         } else {
-          alert('JSON 格式錯誤：無法找到有效的功能數據。');
+          showToast?.('error', 'JSON 格式錯誤：無法找到有效的功能數據。');
         }
-      } catch { alert('解析 JSON 檔案失敗，請確保這是正確的 AWP 備份檔案。'); }
+      } catch { showToast?.('error', '解析 JSON 檔案失敗，請確保這是正確的 AWP 備份檔案。'); }
     };
 
     if (electronAPI) {
       electronAPI.openFile([{ name: 'JSON', extensions: ['json'] }]).then(content => {
-        if (content) processJsonContent(content);
+        if (isIpcError(content)) { showToast?.('error', content.error); return; }
+        if (content) processJsonContent(content as string);
       });
       return;
     }
@@ -331,7 +342,7 @@ export function useYamlExport(
     reader.onload = (event) => processJsonContent(event.target?.result as string);
     reader.readAsText(file);
     e.target.value = '';
-  }, [setFeatures, setRegionName, setSnapshots]);
+  }, [setFeatures, setRegionName, setSnapshots, showToast]);
 
   return { importYaml, generateMachineYaml, exportYaml, exportJson, importJson };
 }
